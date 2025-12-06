@@ -28,15 +28,17 @@ async def main():
             await ws.send(f"[NEWUSER] {new_user} {new_pass}")
             resp = await ws.recv()
 
-            if resp != "OK_NEWUSER":
-                print("ÉCHEC :", resp)
+            if resp == "OK_NEWUSER":
+                print("✓ Compte créé, connexion automatique...\n")
+                # Auto-login
+                user = new_user
+                upass = new_pass
+            elif resp == "REFUSE_CREATION":
+                print("Le serveur a refusé la création du compte.")
                 return
-
-            print("✓ Compte créé, connexion automatique...\n")
-
-            # Auto-login
-            user = new_user
-            upass = new_pass
+    else:
+        print("ÉCHEC :", resp)
+        return
 
         else:
             upass = getpass.getpass("Mot de passe utilisateur : ")
