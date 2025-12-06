@@ -36,9 +36,9 @@ async def main():
             elif resp == "REFUSE_CREATION":
                 print("Le serveur a refusé la création du compte.")
                 return
-    else:
-        print("ÉCHEC :", resp)
-        return
+            else:
+                print("ÉCHEC :", resp)
+                return
 
         else:
             upass = getpass.getpass("Mot de passe utilisateur : ")
