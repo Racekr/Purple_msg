@@ -39,7 +39,6 @@ async def main():
             else:
                 print("ÉCHEC :", resp)
                 return
-
         else:
             upass = getpass.getpass("Mot de passe utilisateur : ")
 
