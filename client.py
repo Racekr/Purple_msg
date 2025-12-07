@@ -6,53 +6,31 @@ SERVER = "wss://purple-msg.onrender.com/ws"
 
 async def main():
     print("Connexion au serveur...\n")
-
     server_pass = getpass.getpass("Mot de passe serveur : ")
 
     async with websockets.connect(SERVER) as ws:
-        # Auth serveur
         await ws.send(f"[AUTH] {server_pass}")
         resp = await ws.recv()
         if resp != "OK_SERVEUR":
             print("ÉCHEC :", resp)
             return
 
-        # Choix mode
-        user = input("ID (ou tape 'login' pour créer un compte) : ")
+        user = input("ID : ")
+        upass = getpass.getpass("Mot de passe : ")
 
-        if user.lower() == "login":
-            new_user = input("Nouvel ID : ")
-            new_pass = getpass.getpass("Nouveau mot de passe : ")
-
-            # Envoi création
-            await ws.send(f"[NEWUSER] {new_user} {new_pass}")
-            resp = await ws.recv()
-
-            if resp == "OK_NEWUSER":
-                print("✓ Compte créé, connexion automatique...\n")
-                user = new_user
-                upass = new_pass
-
-            elif resp == "ERREUR: création refusée" or resp == "REFUSE_CREATION":
-                print("Le serveur a refusé la création du compte.")
-                return
-
-            else:
-                print("ÉCHEC :", resp)
-                return
-
-        else:
-            upass = getpass.getpass("Mot de passe utilisateur : ")
-
-        # Login
         await ws.send(f"[LOGIN] {user} {upass}")
         resp = await ws.recv()
 
-        if resp != "OK_LOGIN":
+        if resp == "OK_LOGIN":
+            print(f"Connecté en tant que {user}")
+        elif resp == "OK_NEWUSER":
+            print(f"Compte {user} créé et validé automatiquement")
+        elif resp == "REFUSE_CREATION":
+            print("Le serveur a refusé la création du compte.")
+            return
+        else:
             print("ÉCHEC :", resp)
             return
-
-        print(f"✓ Connecté en tant que {user}. Tape tes messages.\n")
 
         async def recv():
             while True:
