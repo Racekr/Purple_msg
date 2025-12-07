@@ -1,16 +1,16 @@
 import asyncio
-import websockets
+from aiohttp import web
 import json
 import os
 
 SERVER_PASSWORD = "1234"
 USER_DB_FILE = "users.json"
-PORT = int(os.getenv("PORT", 8765))
 
 clients = {}  # ws -> username
-pending_requests = []  # liste des tuples (ws_client, new_user, new_pass)
-admin_username = "Purple_key"  # admin qui valide les créations
+pending_requests = []  # (ws_client, new_user, new_pass)
+admin_username = "Purple_key"
 
+# Charger la base utilisateur
 try:
     with open(USER_DB_FILE, "r") as f:
         USER_DB = json.load(f)
@@ -21,88 +21,118 @@ def save_users():
     with open(USER_DB_FILE, "w") as f:
         json.dump(USER_DB, f)
 
-async def handler(ws):
+# ---------------------------
+# HTTP Handler
+# ---------------------------
+async def http_root(request):
+    return web.Response(text="Purple-msg server OK. WebSocket: /ws")
+
+# ---------------------------
+# WebSocket Handler
+# ---------------------------
+async def ws_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    print("Nouvelle connexion WS")
+
     try:
-        print("Nouvelle connexion.")
-        auth_msg = await ws.recv()
-        if not auth_msg.startswith("[AUTH] "):
-            await ws.send("ERREUR: Authentification serveur manquante.")
+        # --- Auth serveur ---
+        msg = await ws.receive_str()
+        if not msg.startswith("[AUTH] "):
+            await ws.send_str("ERREUR: Auth manquante.")
             await ws.close()
-            return
+            return ws
 
-        pwd = auth_msg.split(" ", 1)[1].strip()
+        pwd = msg.split(" ", 1)[1].strip()
         if pwd != SERVER_PASSWORD:
-            await ws.send("ERREUR: Mauvais mot de passe serveur.")
+            await ws.send_str("ERREUR: Mauvais mot de passe serveur.")
             await ws.close()
-            return
+            return ws
 
-        await ws.send("OK_SERVEUR")
+        await ws.send_str("OK_SERVEUR")
 
-        # Auth utilisateur ou création
-        login_msg = await ws.recv()
-        if not login_msg.startswith("[LOGIN] "):
-            await ws.send("ERREUR: Format login invalide.")
-            await ws.close()
-            return
+        # --- Register ou Login ---
+        msg = await ws.receive_str()
 
-        _, user, upass = login_msg.split(" ", 2)
+        # REGISTER
+        if msg.startswith("[NEWUSER] "):
+            _, new_user, new_pass = msg.split(" ", 2)
+            admin_ws = next((c for c, u in clients.items() if u == admin_username), None)
 
-        # Admin connecté ?
-        if user == admin_username:
-            clients[ws] = user
-            await ws.send("OK_LOGIN")
-            print(f"Admin {user} connecté.")
-            # notifier les demandes en attente
-            for req_ws, new_user, new_pass in pending_requests.copy():
-                await ws.send(f"[REQUEST] {new_user}")
-                decision = await ws.recv()  # attend "y" ou "n"
+            if admin_ws:
+                # Envoi simple de la demande au serveur admin
+                await admin_ws.send_str(f"[REQUEST] création : <{new_user}>")
+                decision = await admin_ws.receive_str()
                 if decision.lower() == "y":
                     USER_DB[new_user] = new_pass
                     save_users()
-                    await req_ws.send("OK_NEWUSER")
+                    await ws.send_str("OK_NEWUSER")
+                    print(f"Admin a validé {new_user}")
                 else:
-                    await req_ws.send("REFUSE_CREATION")
-                pending_requests.remove((req_ws, new_user, new_pass))
+                    await ws.send_str("REFUSE_CREATION")
+                    print(f"Admin a refusé {new_user}")
+            else:
+                pending_requests.append((ws, new_user, new_pass))
+                await ws.send_str("OK_WAITING_ADMIN")
+                print(f"Demande stockée pour {new_user}")
 
-        # Utilisateur existant ?
-        elif user in USER_DB and USER_DB[user] == upass:
-            clients[ws] = user
-            await ws.send("OK_LOGIN")
-            print(f"Utilisateur {user} connecté.")
+        # LOGIN
+        elif msg.startswith("[LOGIN] "):
+            _, user, upass = msg.split(" ", 2)
+            if user == admin_username or (user in USER_DB and USER_DB[user] == upass):
+                clients[ws] = user
+                await ws.send_str("OK_LOGIN")
 
-        # Sinon, nouvelle création
+                # Si admin, notifier les demandes en attente
+                if user == admin_username and pending_requests:
+                    for req_ws, new_user, new_pass in pending_requests.copy():
+                        await ws.send_str(f"[REQUEST] création : <{new_user}>")
+                        decision = await ws.receive_str()
+                        if decision.lower() == "y":
+                            USER_DB[new_user] = new_pass
+                            save_users()
+                            await req_ws.send_str("OK_NEWUSER")
+                        else:
+                            await req_ws.send_str("REFUSE_CREATION")
+                        pending_requests.remove((req_ws, new_user, new_pass))
+
+            else:
+                await ws.send_str("ERREUR: ID ou mot de passe incorrect.")
+                return ws
         else:
-            admin_ws = next((c for c, u in clients.items() if u == admin_username), None)
-            pending_requests.append((ws, user, upass))
-            print(f"Nouvelle demande de création stockée : {user}")
-            if admin_ws:
-                await admin_ws.send(f"[REQUEST] {user}")
-                decision = await admin_ws.recv()
-                if decision.lower() == "y":
-                    USER_DB[user] = upass
-                    save_users()
-                    await ws.send("OK_NEWUSER")
-                    print(f"Admin a validé {user}")
-                else:
-                    await ws.send("REFUSE_CREATION")
-                    print(f"Admin a refusé {user}")
+            await ws.send_str("ERREUR: Format invalide.")
+            return ws
 
-        # Boucle chat
+        # --- Boucle chat ---
         async for msg in ws:
-            for client in list(clients.keys()):
-                if client != ws:
-                    await client.send(f"[{clients[ws]}] {msg}")
+            if msg.type == web.WSMsgType.TEXT:
+                sender = clients.get(ws, "???")
+                print(f"{sender}: {msg.data}")
+                for client in clients.keys():
+                    if client != ws:
+                        await client.send_str(f"[{sender}] {msg.data}")
 
-    except Exception as e:
-        print("Erreur serveur :", e)
     finally:
         if ws in clients:
-            print(f"{clients[ws]} s'est déconnecté.")
+            print(f"{clients[ws]} déconnecté.")
             del clients[ws]
 
-async def main():
-    async with websockets.serve(handler, "0.0.0.0", PORT):
-        print(f"Serveur lancé sur PORT {PORT}")
-        await asyncio.Future()
+    return ws
 
-asyncio.run(main())
+# ---------------------------
+# Création de l'app
+# ---------------------------
+def create_app():
+    app = web.Application()
+    app.router.add_get("/", http_root)
+    app.router.add_get("/ws", ws_handler)
+    return app
+
+# ---------------------------
+# MAIN
+# ---------------------------
+if __name__ == "__main__":
+    PORT = int(os.getenv("PORT", 10000))
+    print(f"Serveur lancé sur port {PORT}")
+    web.run_app(create_app(), host="0.0.0.0", port=PORT)
