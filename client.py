@@ -1,46 +1,71 @@
 import asyncio
-import websockets
 import getpass
+from aiohttp import ClientSession, ClientConnectorError, WSMsgType
 
-SERVER = "wss://purple-msg.onrender.com/ws"
+SERVER = "https://purple-msg.onrender.com/ws"
 
 async def main():
     print("Connexion au serveur...\n")
     server_pass = getpass.getpass("Mot de passe serveur : ")
 
-    async with websockets.connect(SERVER) as ws:
-        await ws.send(f"[AUTH] {server_pass}")
-        resp = await ws.recv()
-        if resp != "OK_SERVEUR":
-            print("ÉCHEC :", resp)
-            return
+    async with ClientSession() as session:
+        try:
+            async with session.ws_connect(SERVER) as ws:
+                # Auth serveur
+                await ws.send_str(f"[AUTH] {server_pass}")
+                resp = await ws.receive_str()
+                if resp != "OK_SERVEUR":
+                    print("ÉCHEC :", resp)
+                    return
 
-        user = input("ID : ")
-        upass = getpass.getpass("Mot de passe : ")
+                # Choix register/login
+                mode = input("tapez register/login : ").strip().lower()
+                if mode == "register":
+                    new_user = input("Nouvel ID : ")
+                    new_pass = getpass.getpass("Nouveau mot de passe : ")
+                    await ws.send_str(f"[NEWUSER] {new_user} {new_pass}")
+                elif mode == "login":
+                    user = input("ID : ")
+                    upass = getpass.getpass("Mot de passe : ")
+                    await ws.send_str(f"[LOGIN] {user} {upass}")
+                else:
+                    print("Mode invalide.")
+                    return
 
-        await ws.send(f"[LOGIN] {user} {upass}")
-        resp = await ws.recv()
+                # Réception réponse initiale
+                resp = await ws.receive_str()
+                if resp in ("OK_LOGIN", "OK_NEWUSER"):
+                    print(f"✓ Connecté en tant que {user if mode=='login' else new_user}")
+                    if mode == "register":
+                        user, upass = new_user, new_pass
+                elif resp == "REFUSE_CREATION":
+                    print("Le serveur a refusé la création du compte.")
+                    return
+                elif resp == "OK_WAITING_ADMIN":
+                    print("Demande envoyée, en attente de validation admin...")
+                    return
+                else:
+                    print("ÉCHEC :", resp)
+                    return
 
-        if resp == "OK_LOGIN":
-            print(f"Connecté en tant que {user}")
-        elif resp == "OK_NEWUSER":
-            print(f"Compte {user} créé et validé automatiquement")
-        elif resp == "REFUSE_CREATION":
-            print("Le serveur a refusé la création du compte.")
-            return
-        else:
-            print("ÉCHEC :", resp)
-            return
+                # Boucle réception
+                async def recv():
+                    async for msg in ws:
+                        if msg.type == WSMsgType.TEXT:
+                            # Affiche simplement ce que le serveur envoie
+                            print(msg.data)
+                        elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
+                            break
 
-        async def recv():
-            while True:
-                print(await ws.recv())
+                # Boucle envoi
+                async def send():
+                    while True:
+                        msg = await asyncio.to_thread(input)
+                        await ws.send_str(msg)
 
-        async def send():
-            while True:
-                msg = await asyncio.to_thread(input)
-                await ws.send(msg)
+                await asyncio.gather(recv(), send())
 
-        await asyncio.gather(recv(), send())
+        except ClientConnectorError:
+            print("Impossible de se connecter au serveur. Vérifie l'adresse et ton internet.")
 
 asyncio.run(main())
