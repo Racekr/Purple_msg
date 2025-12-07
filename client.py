@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import getpass
 
-SERVER = "ws://192.168.1.69:8765"
+SERVER = "wss://purple-msg.onrender.com/ws"
 
 async def main():
     print("Connexion au serveur...\n")
@@ -30,15 +30,17 @@ async def main():
 
             if resp == "OK_NEWUSER":
                 print("✓ Compte créé, connexion automatique...\n")
-                # Auto-login
                 user = new_user
                 upass = new_pass
-            elif resp == "REFUSE_CREATION":
+
+            elif resp == "ERREUR: création refusée" or resp == "REFUSE_CREATION":
                 print("Le serveur a refusé la création du compte.")
                 return
+
             else:
                 print("ÉCHEC :", resp)
                 return
+
         else:
             upass = getpass.getpass("Mot de passe utilisateur : ")
 
