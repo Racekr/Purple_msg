@@ -1,9 +1,13 @@
 import asyncio
 import websockets
 import json
+import os
 
 SERVER_PASSWORD = "1234"
 USER_DB_FILE = "users.json"
+
+# Render impose un port dynamique
+PORT = int(os.getenv("PORT", 8765))
 
 clients = {}
 
@@ -13,6 +17,7 @@ try:
         USER_DB = json.load(f)
 except FileNotFoundError:
     USER_DB = {}
+
 
 def save_users():
     with open(USER_DB_FILE, "w") as f:
@@ -42,26 +47,18 @@ async def handler(ws):
         # 2) Auth utilisateur
         login_msg = await ws.recv()
 
-        # --- Création de compte avec autorisation ---
+        # --- Création automatique (Render ne peut pas demander input à l’admin) ---
         if login_msg.startswith("[NEWUSER] "):
             _, new_user, new_pass = login_msg.split(" ", 2)
 
             if new_user in USER_DB:
                 await ws.send("ERREUR: User existe déjà")
             else:
-                # Demande d'autorisation à l'admin
-                print(f"Nouvelle demande de création de compte : {new_user}")
-                autorisation = input("Autoriser la création ? (y/n) : ").strip().lower()
-                if autorisation != 'y':
-                    await ws.send("ERREUR: création refusée")
-                    print(f"Création du compte {new_user} refusée.")
-                else:
-                    USER_DB[new_user] = new_pass
-                    save_users()
-                    await ws.send("OK_NEWUSER")
-                    print(f"Nouvel utilisateur créé : {new_user}")
+                USER_DB[new_user] = new_pass
+                save_users()
+                await ws.send("OK_NEWUSER")
+                print(f"Nouvel utilisateur créé : {new_user}")
 
-            # Le client envoie ensuite directement le login sur la même connexion
             login_msg = await ws.recv()
 
         # --- Connexion utilisateur ---
@@ -98,8 +95,8 @@ async def handler(ws):
 
 
 async def main():
-    async with websockets.serve(handler, "0.0.0.0", 8765):
-        print("Serveur lancé sur ws://0.0.0.0:8765")
+    print(f"Serveur lancé sur PORT {PORT} (Render)")
+    async with websockets.serve(handler, "0.0.0.0", PORT):
         await asyncio.Future()
 
 asyncio.run(main())
