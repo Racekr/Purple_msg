@@ -2,6 +2,7 @@ import asyncio
 import websockets
 import json
 import os
+from aiohttp import web
 
 SERVER_PASSWORD = "1234"
 USER_DB_FILE = "users.json"
@@ -24,9 +25,30 @@ def save_users():
         json.dump(USER_DB, f)
 
 
+# ============================
+# 🔹 MINI SERVEUR HTTP (ANTI-CRASH RENDER)
+# ============================
+async def http_root(request):
+    return web.Response(text="WebSocket server running.")
+
+
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get("/", http_root)
+    app.router.add_head("/", http_root)  # Pour éviter l'erreur HEAD
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 10000)
+    await site.start()
+    print("Mini serveur HTTP opérationnel sur port 10000.")
+
+
+# ============================
+# 🔹 SERVEUR WEBSOCKET
+# ============================
 async def handler(ws):
     try:
-        print("Nouvelle connexion.")
+        print("Nouvelle connexion WebSocket.")
 
         # 1) Auth serveur
         auth_msg = await ws.recv()
@@ -42,12 +64,12 @@ async def handler(ws):
             return
 
         await ws.send("OK_SERVEUR")
-        print("Client accepté pour la suite.")
+        print("Client authentifié (serveur).")
 
         # 2) Auth utilisateur
         login_msg = await ws.recv()
 
-        # --- Création automatique (Render ne peut pas demander input à l’admin) ---
+        # --- Création automatique ---
         if login_msg.startswith("[NEWUSER] "):
             _, new_user, new_pass = login_msg.split(" ", 2)
 
@@ -61,7 +83,7 @@ async def handler(ws):
 
             login_msg = await ws.recv()
 
-        # --- Connexion utilisateur ---
+        # --- Connexion ---
         if not login_msg.startswith("[LOGIN] "):
             await ws.send("ERREUR: Format login invalide.")
             await ws.close()
@@ -76,9 +98,9 @@ async def handler(ws):
 
         await ws.send("OK_LOGIN")
         clients[ws] = user
-        print(f"Utilisateur {user} connecté.")
+        print(f"✔ Utilisateur {user} connecté.")
 
-        # 3) Boucle chat
+        # Boucle chat
         async for msg in ws:
             print(f"{user} : {msg}")
             for client in list(clients.keys()):
@@ -94,9 +116,16 @@ async def handler(ws):
             del clients[ws]
 
 
+# ============================
+# 🔹 LANCEMENT GLOBAL
+# ============================
 async def main():
-    print(f"Serveur lancé sur PORT {PORT} (Render)")
+    # Lancement du mini serveur HTTP
+    await start_http_server()
+
+    print(f"Serveur WebSocket lancé sur PORT {PORT} (Render)")
     async with websockets.serve(handler, "0.0.0.0", PORT):
-        await asyncio.Future()
+        await asyncio.Future()  # boucle infinie
+
 
 asyncio.run(main())
