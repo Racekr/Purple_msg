@@ -19,38 +19,16 @@ try:
 except FileNotFoundError:
     USER_DB = {}
 
-
 def save_users():
     with open(USER_DB_FILE, "w") as f:
         json.dump(USER_DB, f)
 
-
-# ============================
-# 🔹 MINI SERVEUR HTTP (ANTI-CRASH RENDER)
-# ============================
-async def http_root(request):
-    return web.Response(text="WebSocket server running.")
-
-
-async def start_http_server():
-    app = web.Application()
-    app.router.add_get("/", http_root)
-    app.router.add_head("/", http_root)  # Pour éviter l'erreur HEAD
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 10000)
-    await site.start()
-    print("Mini serveur HTTP opérationnel sur port 10000.")
-
-
-# ============================
-# 🔹 SERVEUR WEBSOCKET
-# ============================
+# --- WebSocket handler ---
 async def handler(ws):
     try:
-        print("Nouvelle connexion WebSocket.")
+        print("Nouvelle connexion.")
 
-        # 1) Auth serveur
+        # Auth serveur
         auth_msg = await ws.recv()
         if not auth_msg.startswith("[AUTH] "):
             await ws.send("ERREUR: Authentification serveur manquante.")
@@ -64,12 +42,12 @@ async def handler(ws):
             return
 
         await ws.send("OK_SERVEUR")
-        print("Client authentifié (serveur).")
+        print("Client accepté pour la suite.")
 
-        # 2) Auth utilisateur
+        # Auth utilisateur
         login_msg = await ws.recv()
 
-        # --- Création automatique ---
+        # Création de compte automatique si nécessaire
         if login_msg.startswith("[NEWUSER] "):
             _, new_user, new_pass = login_msg.split(" ", 2)
 
@@ -81,9 +59,10 @@ async def handler(ws):
                 await ws.send("OK_NEWUSER")
                 print(f"Nouvel utilisateur créé : {new_user}")
 
+            # Le client envoie ensuite le login
             login_msg = await ws.recv()
 
-        # --- Connexion ---
+        # Connexion utilisateur
         if not login_msg.startswith("[LOGIN] "):
             await ws.send("ERREUR: Format login invalide.")
             await ws.close()
@@ -98,7 +77,7 @@ async def handler(ws):
 
         await ws.send("OK_LOGIN")
         clients[ws] = user
-        print(f"✔ Utilisateur {user} connecté.")
+        print(f"Utilisateur {user} connecté.")
 
         # Boucle chat
         async for msg in ws:
@@ -115,17 +94,24 @@ async def handler(ws):
             print(f"{clients[ws]} s'est déconnecté.")
             del clients[ws]
 
+# --- HTTP server pour Render ---
+async def http_root(request):
+    return web.Response(text="Serveur WebSocket actif !")
 
-# ============================
-# 🔹 LANCEMENT GLOBAL
-# ============================
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get("/", http_root)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"HTTP server prêt sur port {PORT}")
+
+# --- Main ---
 async def main():
-    # Lancement du mini serveur HTTP
-    await start_http_server()
-
-    print(f"Serveur WebSocket lancé sur PORT {PORT} (Render)")
+    print(f"Démarrage du serveur WebSocket sur port {PORT}")
+    await start_http_server()  # Démarrage HTTP
     async with websockets.serve(handler, "0.0.0.0", PORT):
-        await asyncio.Future()  # boucle infinie
-
+        await asyncio.Future()  # run forever
 
 asyncio.run(main())
