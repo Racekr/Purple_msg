@@ -3,7 +3,9 @@ from aiohttp import web
 import json
 import os
 
-SERVER_PASSWORD = "1234"
+import os
+SERVER_PASSWORD = os.getenv("SERVER_PASSWORD")
+
 USER_DB_FILE = "users.json"
 admin_username = "Purple_key"
 
