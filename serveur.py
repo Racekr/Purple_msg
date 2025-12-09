@@ -106,7 +106,7 @@ async def ws_handler(request):
             _, user, upass = msg.split(" ", 2)
 
             user_data = await get_user(user)
-            is_valid = (user == admin_username and user_sata["password" == admin_password]) or (user_data and user_data["password"] == upass)
+            is_valid = (user == admin_username and user_data["password" == admin_password]) or (user_data and user_data["password"] == upass)
 
             if is_valid:
                 clients[ws] = user
