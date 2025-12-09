@@ -115,6 +115,7 @@ async def ws_handler(request):
 
                 if user == admin_username:
                     admin_queues[ws] = asyncio.Queue()
+                    admin_waiting[ws] = None   # ← OBLIGATOIRE !
                     print("🔑 Admin Purple_key connecté")
 
                     if pending_requests:
