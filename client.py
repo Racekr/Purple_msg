@@ -3,7 +3,7 @@ import asyncio
 import getpass
 from aiohttp import ClientSession, ClientConnectorError, WSMsgType
 
-SERVER = "https://purple-msg.onrender.com/ws"
+SERVER = "wss://purple-msg.onrender.com/ws"
 ADMIN_USERNAME = "Purple_key"
 
 async def main():
