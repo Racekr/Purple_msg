@@ -4,7 +4,7 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient
 
 SERVER_PASSWORD = os.getenv("SERVER_PASSWORD")
-MONGO_URI = os.getenv("MONGO_URI")  # À configurer sur Render
+MONGO_URI = os.getenv("MONGO_URI")
 
 admin_username = "Purple_key"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
@@ -38,9 +38,6 @@ async def user_exists(username):
     return await users_collection.count_documents({"username": username}) > 0
 
 
-# -------------------------------------------------
-# WS HANDLER CORRIGÉ
-# -------------------------------------------------
 async def ws_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
@@ -84,6 +81,8 @@ async def ws_handler(request):
                 decision = await admin_queues[admin_ws].get()
                 admin_waiting[admin_ws] = None
                 
+                print(f"Admin a répondu: {decision} pour {new_user}")
+                
                 if decision == "y":
                     await create_user(new_user, new_pass)
                     clients[ws] = new_user
@@ -91,14 +90,15 @@ async def ws_handler(request):
                     print(f"✓ Utilisateur {new_user} créé et connecté")
                 else:
                     await ws.send_str("REFUSE_CREATION")
-                    await ws.close()
                     print(f"✗ Création refusée pour {new_user}")
+                    await ws.close()
                     return ws
             else:
                 print(f"Aucun admin connecté. {new_user} mis en attente.")
                 pending_requests.append((ws, new_user, new_pass))
                 await ws.send_str("OK_WAITING_ADMIN")
 
+        # LOGIN
         elif msg.startswith("[LOGIN] "):
             _, user, upass = msg.split(" ", 2)
 
@@ -134,6 +134,8 @@ async def ws_handler(request):
                     
                     decision = await admin_queues[ws].get()
                     admin_waiting[ws] = None
+                    
+                    print(f"Admin a répondu: {decision} pour {u}")
 
                     if decision == "y":
                         await create_user(u, p)
@@ -142,8 +144,8 @@ async def ws_handler(request):
                         print(f"✓ Utilisateur {u} créé (demande en attente)")
                     else:
                         await req_ws.send_str("REFUSE_CREATION")
-                        await req_ws.close()
                         print(f"✗ Création refusée pour {u} (demande en attente)")
+                        await req_ws.close()
 
                     pending_requests.remove((req_ws, u, p))
             
@@ -158,6 +160,11 @@ async def ws_handler(request):
                 clients[ws] = user
                 await ws.send_str("OK_LOGIN")
                 print(f"✓ {user} connecté")
+
+        else:
+            await ws.send_str("ERREUR: Format invalide.")
+            await ws.close()
+            return ws
 
         # BOUCLE PRINCIPALE
         async for message in ws:
@@ -198,16 +205,11 @@ async def ws_handler(request):
 
     return ws
 
-# -------------------------------------------------
-# HTTP
-# -------------------------------------------------
+
 async def http_root(request):
     return web.Response(text="Purple-msg server OK. WebSocket: /ws")
 
 
-# -------------------------------------------------
-# APP
-# -------------------------------------------------
 def create_app():
     app = web.Application()
     app.router.add_get("/", http_root)

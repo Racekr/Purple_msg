@@ -1,4 +1,3 @@
-# client.py
 import asyncio
 import getpass
 from aiohttp import ClientSession, ClientConnectorError, WSMsgType
@@ -36,7 +35,7 @@ async def main():
                     new_user = input("Nouvel ID : ")
                     new_pass = getpass.getpass("Nouveau mot de passe : ")
                     await ws.send_str(f"[NEWUSER] {new_user} {new_pass}")
-                    user = new_user  # pour référence
+                    user = new_user
                     
                 elif mode == "login":
                     user = input("ID : ")
@@ -79,8 +78,11 @@ async def main():
                             print("\n❌ L'admin a refusé la création de votre compte.")
                             return
                         else:
-                            # Autres messages pendant l'attente
                             print(m.data)
+                
+                elif resp == "REFUSE_CREATION":
+                    print("❌ L'admin a refusé la création de votre compte.")
+                    return
                     
                 elif resp.startswith("ERREUR"):
                     print(f"❌ {resp}")
@@ -106,7 +108,6 @@ async def main():
                         if msg.type == WSMsgType.TEXT:
                             data = msg.data
                             
-                            # Affichage spécial pour l'admin
                             if data.startswith("[REQUEST] "):
                                 username_req = data.replace("[REQUEST] ", "").strip()
                                 print(f"\n🔔 DEMANDE DE CRÉATION : {username_req}")
@@ -115,16 +116,18 @@ async def main():
                                 print(data)
                                 
                         elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
-                            print("\n❌ Connexion fermée ou erreur.")
+                            print("\n❌ Connexion fermée.")
                             break
 
                 async def send():
                     while True:
                         try:
                             s = await asyncio.to_thread(input)
-                            if s.strip():  # Envoyer seulement si non vide
+                            if s.strip():
                                 await ws.send_str(s)
                         except EOFError:
+                            break
+                        except Exception:
                             break
 
                 await asyncio.gather(recv(), send())
