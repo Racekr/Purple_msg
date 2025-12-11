@@ -39,7 +39,7 @@ async def user_exists(username):
 
 
 # -------------------------------------------------
-# WS HANDLER
+# WS HANDLER CORRIGÉ
 # -------------------------------------------------
 async def ws_handler(request):
     ws = web.WebSocketResponse()
@@ -84,8 +84,6 @@ async def ws_handler(request):
                 decision = await admin_queues[admin_ws].get()
                 admin_waiting[admin_ws] = None
                 
-                print(f"Admin a répondu: {decision} pour {new_user}")
-
                 if decision == "y":
                     await create_user(new_user, new_pass)
                     clients[ws] = new_user
@@ -93,65 +91,73 @@ async def ws_handler(request):
                     print(f"✓ Utilisateur {new_user} créé et connecté")
                 else:
                     await ws.send_str("REFUSE_CREATION")
-                    print(f"✗ Création refusée pour {new_user}")
                     await ws.close()
+                    print(f"✗ Création refusée pour {new_user}")
                     return ws
             else:
                 print(f"Aucun admin connecté. {new_user} mis en attente.")
                 pending_requests.append((ws, new_user, new_pass))
                 await ws.send_str("OK_WAITING_ADMIN")
 
-        # LOGIN
         elif msg.startswith("[LOGIN] "):
             _, user, upass = msg.split(" ", 2)
 
-            user_data = await get_user(user)
-            is_valid = (user == admin_username and user_data["password"] == ADMIN_PASSWORD) or (user_data and user_data["password"] == upass)
+            # Vérification ADMIN en premier
+            if user == admin_username:
+                if upass != ADMIN_PASSWORD:
+                    await ws.send_str("ERREUR: ID ou mot de passe incorrect.")
+                    await ws.close()
+                    return ws
+                
+                # Admin authentifié
+                clients[ws] = user
+                await ws.send_str("OK_LOGIN")
+                print(f"✓ Admin {user} connecté")
+                
+                # Initialiser la queue admin
+                admin_queues[ws] = asyncio.Queue()
+                admin_waiting[ws] = None
+                print("🔑 Admin Purple_key connecté")
+                
+                # Traiter les demandes en attente
+                if pending_requests:
+                    print(f"{len(pending_requests)} demande(s) en attente")
+                
+                for req_ws, u, p in pending_requests.copy():
+                    if req_ws.closed:
+                        pending_requests.remove((req_ws, u, p))
+                        print(f"Client {u} déconnecté, demande ignorée")
+                        continue
+                    
+                    await ws.send_str(f"[REQUEST] {u}")
+                    admin_waiting[ws] = asyncio.Event()
+                    
+                    decision = await admin_queues[ws].get()
+                    admin_waiting[ws] = None
 
-            if is_valid:
+                    if decision == "y":
+                        await create_user(u, p)
+                        await req_ws.send_str("OK_NEWUSER")
+                        clients[req_ws] = u
+                        print(f"✓ Utilisateur {u} créé (demande en attente)")
+                    else:
+                        await req_ws.send_str("REFUSE_CREATION")
+                        await req_ws.close()
+                        print(f"✗ Création refusée pour {u} (demande en attente)")
+
+                    pending_requests.remove((req_ws, u, p))
+            
+            # Utilisateur normal
+            else:
+                user_data = await get_user(user)
+                if not user_data or user_data["password"] != upass:
+                    await ws.send_str("ERREUR: ID ou mot de passe incorrect.")
+                    await ws.close()
+                    return ws
+
                 clients[ws] = user
                 await ws.send_str("OK_LOGIN")
                 print(f"✓ {user} connecté")
-
-                if user == admin_username:
-                    admin_queues[ws] = asyncio.Queue()
-                    admin_waiting[ws] = None   # ← OBLIGATOIRE !
-                    print("🔑 Admin Purple_key connecté")
-
-                    if pending_requests:
-                        print(f"{len(pending_requests)} demande(s) en attente")
-                    
-                    for req_ws, u, p in pending_requests.copy():
-                        if req_ws.closed:
-                            pending_requests.remove((req_ws, u, p))
-                            print(f"Client {u} déconnecté, demande ignorée")
-                            continue
-                        
-                        await ws.send_str(f"[REQUEST] {u}")
-                        admin_waiting[ws] = asyncio.Event()
-                        
-                        decision = await admin_queues[ws].get()
-                        admin_waiting[ws] = None
-
-                        if decision == "y":
-                            await create_user(u, p)
-                            await req_ws.send_str("OK_NEWUSER")
-                            clients[req_ws] = u
-                            print(f"✓ Utilisateur {u} créé (demande en attente)")
-                        else:
-                            await req_ws.send_str("REFUSE_CREATION")
-                            await req_ws.close()
-                            print(f"✗ Création refusée pour {u} (demande en attente)")
-
-                        pending_requests.remove((req_ws, u, p))
-            else:
-                await ws.send_str("ERREUR: ID ou mot de passe incorrect.")
-                await ws.close()
-                return ws
-        else:
-            await ws.send_str("ERREUR: Format invalide.")
-            await ws.close()
-            return ws
 
         # BOUCLE PRINCIPALE
         async for message in ws:
@@ -191,7 +197,6 @@ async def ws_handler(request):
         pending_requests[:] = [(w, u, p) for w, u, p in pending_requests if w != ws]
 
     return ws
-
 
 # -------------------------------------------------
 # HTTP
