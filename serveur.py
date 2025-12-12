@@ -88,7 +88,6 @@ async def ws_handler(request):
                     clients[ws] = new_user
                     await ws.send_str("OK_NEWUSER")
                     print(f"✓ Utilisateur {new_user} créé et connecté")
-                    # Ne pas return ici, continuer vers la boucle principale
                 else:
                     await ws.send_str("REFUSE_CREATION")
                     print(f"✗ Création refusée pour {new_user}")
@@ -98,8 +97,6 @@ async def ws_handler(request):
                 print(f"Aucun admin connecté. {new_user} mis en attente.")
                 pending_requests.append((ws, new_user, new_pass))
                 await ws.send_str("OK_WAITING_ADMIN")
-                # Le client reste en attente dans pending_requests
-                # Il sera traité quand un admin se connectera
 
         # LOGIN
         elif msg.startswith("[LOGIN] "):
