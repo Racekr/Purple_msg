@@ -59,6 +59,7 @@ async def main():
                     
                 elif resp == "OK_NEWUSER":
                     print(f"✓ Compte créé ! Connecté en tant que {user}\n")
+                    # Continuer directement vers le chat
                     
                 elif resp == "OK_WAITING_ADMIN":
                     print("⏳ Demande envoyée, en attente de validation admin...")
