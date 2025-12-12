@@ -53,12 +53,17 @@ async def main():
                     return
                 resp = m.data
 
+                # Variable pour savoir si on est connecté
+                connected = False
+
                 # Gérer les différentes réponses
                 if resp == "OK_LOGIN":
                     print(f"✓ Connecté en tant que {user}\n")
+                    connected = True
                     
                 elif resp == "OK_NEWUSER":
                     print(f"✓ Compte créé ! Connecté en tant que {user}\n")
+                    connected = True
                     
                 elif resp == "OK_WAITING_ADMIN":
                     print("⏳ Demande envoyée, en attente de validation admin...")
@@ -73,6 +78,7 @@ async def main():
                         
                         if m.data == "OK_NEWUSER":
                             print(f"\n✓ Compte validé par l'admin ! Vous êtes connecté en tant que {user}\n")
+                            connected = True
                             break
                         elif m.data == "REFUSE_CREATION":
                             print("\n❌ L'admin a refusé la création de votre compte.")
@@ -90,6 +96,10 @@ async def main():
                     
                 else:
                     print(f"❌ Réponse inattendue : {resp}")
+                    return
+
+                # Si on n'est pas connecté, on arrête
+                if not connected:
                     return
 
                 # Si on arrive ici, on est connecté avec succès
